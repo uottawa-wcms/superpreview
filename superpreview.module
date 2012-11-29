@@ -1,0 +1,440 @@
+<?php
+
+  function superpreview_menu() {
+    return array(
+      'preview/%superpreview' => array(
+        'title' => t('Content Preview'),
+        'description' => t('Better preview of content'),
+        'type' => MENU_CALLBACK,
+        'access callback' => TRUE,
+        'delivery callback' => 'superpreview_deliver_blank_page',
+        'page callback' => 'superpreview_preview_pane',
+        'page arguments' => array(1),
+      ),
+      'preview/get-request/%superpreview/%superpreview_language/%superpreview_device' => array(
+        'title' => t('Content Preview'),
+        'description' => t('Callback for loading a preview of content, based on user agent'),
+        'load arguments' => array(3),
+        'type' => MENU_CALLBACK,
+        'access callback' => TRUE,
+        'page callback' => 'superpreview_curl_request',
+        'page arguments' => array(2, 3, 4),
+      ),
+      'preview/get-html/%superpreview/%superpreview_language' => array(
+        'title' => t('Content Preview'),
+        'description' => t('Callback for loading a better preview of content'),
+        'load arguments' => array(3),
+        'type' => MENU_CALLBACK,
+        'access callback' => TRUE,
+        'page callback' => 'superpreview_preview',
+        'page arguments' => array(2, 3),
+      )
+    );
+  }
+
+  function superpreview_begin_preview($content, $include_code = TRUE) {
+    global $language;
+    $sessid = 'preview-' . hash('sha256', var_export($content, TRUE));
+    $_SESSION['superpreview'][$sessid] = $content;
+    if ($include_code) {
+      $code = '<script language="javascript" type="text/javascript">';
+      $lang = $language->language;
+      if (!isset($content[$lang])) {
+        $lang = 'en';
+      }
+      if (!isset($content[$lang])) {
+        reset($content);
+        $lang = key($content);
+      }
+      $preview_path = url('preview/' . $sessid . '/' . $lang, array(
+        'absolute' => TRUE,
+      ));
+      $code .= 'window.open("' . $preview_path . '", "_blank", "directories=no,location=no,menubar=no,resizable=yes,scrollbars=yes,status=no,titlebar=no,toolbar=no");';
+      $code .= '</script><a href="' . $preview_path . '" target="_blank">' . t('Your preview has been generated for you') . '</a>';
+      return $code;
+    }
+    return $sessid;
+  }
+
+  function superpreview_curl_request($preview_object, $language, $device) {
+    $url = url('preview/get-html/' . $preview_object['#session_id'] . '/' . $language, array(
+      'absolute' => TRUE,
+    ));
+    $c = curl_init($url);
+    $cookie_pairs = array();
+    foreach ($_COOKIE as $name => $value) {
+      $cookie_pairs[] = $name . '='. $value;
+    }
+    curl_setopt_array($c, array(
+      CURLOPT_AUTOREFERER => TRUE,
+      CURLOPT_COOKIESESSION => TRUE,
+      CURLOPT_FOLLOWLOCATION => TRUE,
+      CURLOPT_MAXREDIRS => 5,
+      CURLOPT_RETURNTRANSFER => TRUE,
+      CURLOPT_COOKIE => implode('; ', $cookie_pairs),
+      CURLOPT_USERAGENT => $device['user agent'],
+    ));
+    $result = curl_exec($c);
+    print $result;
+    curl_close($c);
+    exit();
+  }
+
+  function superpreview_device_load($device_name) {
+    $list = superpreview_user_agents();
+    if (isset($list[$device_name])) {
+      return $list[$device_name];
+    }
+    return FALSE;
+  }
+
+  function superpreview_preview_pane($preview_object) {
+    return theme('superpreview', array(
+      'session' => $preview_object['#session_id'],
+    ));
+  }
+
+  function superpreview_language_load($language) {
+    if ($language == 'en' || $language == 'fr') {
+      return $language;
+    }
+    return FALSE;
+  }
+
+  function superpreview_load($session_id, $language = 'en') {
+    $content = array();
+    if ($session_id == 'demo') {
+      $content = array(
+        'en' => array(
+          '#title' => 'Hello World',
+          '#content' => '<p>One, two, three, four, five</p>',
+        ),
+        'fr' => array(
+          '#title' => 'Bonjour, le monde',
+          '#content' => '<p>Un, deux, trois, quatre, cinq</p>',
+        ),
+      );
+    }
+    if (!empty($_SESSION['superpreview'][$session_id])) {
+      $content = $_SESSION['superpreview'][$session_id];
+    }
+    if (isset($content[$language])) {
+      return $content[$language] + array('#session_id' => $session_id);
+    }
+    return FALSE;
+  }
+
+  function superpreview_user_agents() {
+    $list = array(
+      'samsung-galaxy-tab-7plus' => array(
+        'title' => 'Samsung Galaxy Tab 7.7 / 10.1',
+        'user agent' => '3.0 GT-P7100---Mozilla/5.0 (Linux; U; Android 3.0; xx-xx; GT-P7100 Build/HRI83) AppleWebkit/534.13 (KHTML, like Gecko) Version/4.0 Safari/534.13',
+        'resolutions' => array(
+          '1280x800' => t('Landscape'),
+          '800x1280' => t('Portrait'),
+        )
+      ),
+      'samsung-galaxy-tab' => array(
+        'title' => 'Samsung Galaxy Tab',
+        'user agent' => 'Mozilla/5.0 (Linux; U; Android 2.2; en-us; SCH-I800 Build/FROYO) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1',
+        'resolutions' => array(
+          '1024x600' => t('Landscape'),
+          '600x1024' => t('Portrait'),
+        )
+      ),
+      'samsung-galaxy-nexus' => array(
+        'title' => 'Samsung Galaxy Nexus',
+        'user agent' => 'Mozilla/5.0 (Linux; U; Android 2.2; en-us; Nexus One Build/FRF91) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1',
+        'resolutions' => array(
+          '1280x720' => t('Landscape'),
+          '720x1280' => t('Portrait'),
+        )
+      ),
+      'motorola-razr' => array(
+        'title' => 'Motorola Atrix / RAZR',
+        'user agent' => 'MOT-V3i/08.B4.34R MIB/2.2.1 Profile/MIDP-2.0 Configuration/CLDC-1.1 UP.Link/6.3.0.0.0',
+        'resolutions' => array(
+          '960x540' => 'Landscape',
+          '540x960' => 'Portrait',
+        )
+      ),
+      'motorola-xoom' => array(
+        'title' => 'Motorola Xoom',
+        'user agent' => 'Mozilla/5.0 (Linux; U; Android 3.0; en-us; Xoom Build/HRI39) AppleWebKit/534.13 (KHTML, like Gecko) Version/4.0 Safari/534.13',
+        'resolutions' => array(
+          '1280x800' => t('Landscape'),
+          '800x1280' => t('Portrait'),
+        )
+      ),
+      'motorola-droid' => array(
+        'title' => 'Motorola Droid / Droid X',
+        'user agent' => 'Mozilla/5.0 (Linux; U; Android 2.2; en-us; Droid Build/FRG22D) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1',
+        'resolutions' => array(
+          '854x480' => t('Landscape'),
+          '480x854' => t('Portrait'),
+        )
+      ),
+      'motorola-droid-3' => array(
+        'title' => 'Motorola Droid 3',
+        'user agent' => 'Mozilla/5.0 (Linux; U; Android 2.3.4; en-gb; DROID3 Build/5.5.1_84_D3G-55) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1',
+        'resolutions' => array(
+          '960x580' => t('Landscape'),
+          '580x960' => t('Portrait'),
+        )
+      ),
+      'palm-pre' => array(
+        'title' => 'Palm Pre',
+        'user agent' => 'Mozilla/5.0 (webOS/1.0; U; en-US) AppleWebKit/525.27.1 (KHTML, like Gecko) Version/1.0 Safari/525.27.1 Pre/1.0',
+        'resolutions' => array(
+          '480x320' => t('Landscape'),
+          '320x480' => t('Portrait'),
+        )
+      ),
+      'rim-blackberry-playbook' => array(
+        'title' => 'BlackBerry Playbook',
+        'user agent' => 'Mozilla/5.0 (PlayBook; U; RIM Tablet OS 2.0.1; en-US) AppleWebKit/535.8+ (KHTML, like Gecko) Version/7.2.0.1 Safari/535.8+',
+        'resolutions' => array(
+          '1024x600' => t('Landscape'),
+          '600x1024' => t('Portrait'),
+        )
+      ),
+      'apple-iphone' => array(
+        'title' => 'Apple iPhone 1-3',
+        'user agent' => 'Mozilla/5.0 (iPod; U; iPhone OS 2_0 like Mac OS X; en-us) AppleWebKit/525.17 (KHTML, like Gecko) Version/3.1 Mobile/5A240d Safari/5525.7',
+        'resolutions' => array(
+          '480x320' => t('Landscape'),
+          '320x480' => t('Portrait'),
+        )
+      ),
+      'apple-iphone-4' => array(
+        'title' => 'Apple iPhone 4+',
+        'user agent' => 'Mozilla/5.0 (iPhone; U; CPU iPhone OS 4_0 like Mac OS X; en-us) AppleWebKit/532.9 (KHTML, like Gecko) Version/4.0.5 Mobile/8A293 Safari/6531.22.7',
+        'resolutions' => array(
+          '960x640' => t('Landscape'),
+          '640x960' => t('Portrait'),
+        )
+      ),
+      'apple-ipad' => array(
+        'title' => 'Apple iPad 1-2',
+        'user agent' => 'Mozilla/5.0(iPad; U; CPU OS 2_3 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8F191 Safari/6533.18.5',
+        'resolutions' => array(
+          '1024x768' => t('Landscape'),
+          '768x1024' => t('Portrait'),
+        )
+      ),
+      'apple-ipad-3' => array(
+        'title' => 'Apple iPad 3',
+        'user agent' => 'Mozilla/5.0 (iPad; U; CPU OS 3_2 like Mac OS X; en-us) AppleWebKit/531.21.10 (KHTML, like   Gecko) Version/4.0.4 Mobile/7B334b Safari/531.21.10',
+        'resolutions' => array(
+          '2048x1536' => t('Landscape'),
+          '1536x2048' => t('Portrait'),
+        )
+      ),
+      'generic-desktop' => array(
+        'title' => 'Generic Desktops',
+        'user agent' => 'Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.6 (KHTML, like Gecko) Chrome/20.0.1090.0 Safari/536.6',
+        'resolutions' => array(
+          '1024x768' => 'XGA',
+          '1366x768' => 'HD',
+          '1280x800' => 'WXGA',
+          '1280x1024' => 'SXGA',
+          '1440x900' => 'WXGA+',
+          '1920x1080' => 'FHD',
+          '1600x900' => 'HD+',
+          '1680x1050' => 'WSXGA+',
+          '1360x768' => 'HD',
+          '1024x600' => 'WSVGA',
+        )
+      ),
+      'generic-tvs' => array(
+        'title' => 'Generic TVs',
+        'user agent' => 'Mozilla/5.0 (Windows NT 6.2) AppleWebKit/536.6 (KHTML, like Gecko) Chrome/20.0.1090.0 Safari/536.6',
+        'resolutions' => array(
+          '1920x1080' => '1080i/p',
+          '1280x720' => '720i/p',
+          '720x576' => '576i/p',
+          '720x480' => '480i/p',
+        )
+      ),
+    );
+    uasort($list, 'superpreview_sort_devices');
+    return $list;
+  }
+
+  function superpreview_sort_devices($a, $b) {
+    return strcasecmp($a['title'], $b['title']);
+  }
+
+  function superpreview_preview($preview_object, $language_code) {
+    global $language;
+    if ($language_code != $language->language) {
+      $languages = language_list();
+      $language = $languages[$language_code];
+    }
+    drupal_set_title(check_plain($preview_object['#title']));
+    return $preview_object['#content'];
+  }
+
+  function superpreview_theme() {
+    return array(
+      'superpreview' => array(
+        'variables' => array(
+          '#title' => t('Blank Title'),
+          '#content' => '',
+        )
+      )
+    );
+  }
+
+  function theme_superpreview($args) {
+    global $language;
+    if (empty($args['language'])) {
+      $args['language'] = $language->language;
+    }
+    if (empty($args['device'])) {
+      $args['device'] = 'generic-desktop';
+    }
+    if (empty($args['resolution'])) {
+      $args['resolution'] = '1024x768';
+    }
+    $html = '';
+    $html .= '<!DOCTYPE html>';
+    $html .= '<html>';
+    $html .= '<head>';
+    $html .= '<title>' . t('Page Preview') . '</title>';
+    $html .= '<script type="text/javascript" language="javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>';
+    $html .= '<script type="text/javascript" language="javascript" src="' . base_path() . drupal_get_path('module', 'superpreview') . '/superpreview.js' . '"></script>';
+    $html .= '<link rel="stylesheet" type="text/css" href="' . base_path() . drupal_get_path('module', 'superpreview') . '/superpreview.css' . '" />';
+    $html .= '</head>';
+    $html .= '<body>';
+    $html .= '<input type="hidden" id="base_path" value="index.php?q=preview/get-request/'.$args['session'] . '/" />';
+    $html .= '<div id="menu_float"></div>';
+    $html .= '<header>';
+    $settings = superpreview_user_agents();
+    $html .= '<ul class="dropdownitems">';
+    $html .= '<li id="show_device_list">' . t('Devices');
+    $html .= '<ul id="device_list">';
+    $resolutions = '<ul id="resolution_list">';
+    foreach ($settings as $key => $info) {
+      $active = ($key === $args['device']);
+      $display = $info['title'];
+      $html .= '<li id="' . $key . '"' . ($active ? ' class="preview_active"' : '') . '>' . $display . '</li>';
+      foreach ($info['resolutions'] as $res_key => $resolution) {
+        $resolutions .= '<li id="' . $key . '_' . $res_key . '"'.($active && $res_key == $args['resolution'] ? ' class="preview_active"' : '').'>' . $resolution . ' [' . $res_key . ']</li>';
+      }
+    }
+    $resolutions .= '</ul>';
+    $html .= '</ul>';
+    $html .= '</li>';
+    $html .= '<li id="show_resolution_list">' . t('Display Resolution');
+    $html .= $resolutions;
+    $html .= '</li>';
+    $html .= '<li class="right" id="show_language_list">' . t('Content Language');
+    $html .= '<ul id="language_list">';
+    $languages = language_list();
+    foreach ($languages as $key => $obj) {
+      $html .= '<li id="preview_'.$key.'"'.($key == $args['language'] ? ' class="preview_active"' : '').'>' . $obj->native . '</li>';
+    }
+    $html .= '</ul>';
+    $html .= '</li>';
+    $html .= '</ul>';
+    $html .= '</header>';
+    $html .= '<section>';
+    $url = url('preview/get-request/'.$args['session'] . '/'.$args['language'].'/' . $args['device'], array(
+      'absolute' => TRUE,
+    ));
+    if (!empty($_GET['obama'])) {
+      $html .= '<iframe style="width: 1024px; height: 768px;" src="http://www.barackobama.com" />';
+    } else {
+      $html .= '<iframe style="width: 1024px; height: 768px;" src="' . $url .'" />';
+    }
+    $html .= '</section>';
+    $html .= '</body>';
+    $html .= '</html>';
+    return trim($html);
+  }
+
+  function superpreview_deliver_blank_page($page_callback_result) {
+    global $language;
+    if (isset($page_callback_result) && is_null(drupal_get_http_header('Content-Type'))) {
+      drupal_add_http_header('Content-Type', 'text/html; charset=utf-8');
+    }
+    drupal_add_http_header('Content-Language', $language->language);
+
+    if (is_int($page_callback_result)) {
+      // @todo: Break these up into separate functions?
+      switch ($page_callback_result) {
+        case MENU_NOT_FOUND:
+          // Print a 404 page.
+          drupal_add_http_header('Status', '404 Not Found');
+
+          watchdog('page not found', check_plain($_GET['q']), NULL, WATCHDOG_WARNING);
+
+          // Check for and return a fast 404 page if configured.
+          drupal_fast_404();
+
+          // Keep old path for reference, and to allow forms to redirect to it.
+          if (!isset($_GET['destination'])) {
+            $_GET['destination'] = $_GET['q'];
+          }
+
+          $path = drupal_get_normal_path(variable_get('site_404', ''));
+          if ($path && $path != $_GET['q']) {
+            // Custom 404 handler. Set the active item in case there are tabs to
+            // display, or other dependencies on the path.
+            menu_set_active_item($path);
+            $return = menu_execute_active_handler($path, FALSE);
+          }
+
+          if (empty($return) || $return == MENU_NOT_FOUND || $return == MENU_ACCESS_DENIED) {
+            // Standard 404 handler.
+            drupal_set_title(t('Page not found'));
+            $return = t('The requested page "@path" could not be found.', array('@path' => request_uri()));
+          }
+
+          drupal_set_page_content($return);
+          $page = element_info('page');
+          print drupal_render_page($page);
+          break;
+
+        case MENU_ACCESS_DENIED:
+          // Print a 403 page.
+          drupal_add_http_header('Status', '403 Forbidden');
+          watchdog('access denied', check_plain($_GET['q']), NULL, WATCHDOG_WARNING);
+
+          // Keep old path for reference, and to allow forms to redirect to it.
+          if (!isset($_GET['destination'])) {
+            $_GET['destination'] = $_GET['q'];
+          }
+
+          $path = drupal_get_normal_path(variable_get('site_403', ''));
+          if ($path && $path != $_GET['q']) {
+            // Custom 403 handler. Set the active item in case there are tabs to
+            // display or other dependencies on the path.
+            menu_set_active_item($path);
+            $return = menu_execute_active_handler($path, FALSE);
+          }
+
+          if (empty($return) || $return == MENU_NOT_FOUND || $return == MENU_ACCESS_DENIED) {
+            // Standard 403 handler.
+            drupal_set_title(t('Access denied'));
+            $return = t('You are not authorized to access this page.');
+          }
+
+          print drupal_render_page($return);
+          break;
+
+        case MENU_SITE_OFFLINE:
+          // Print a 503 page.
+          drupal_maintenance_theme();
+          drupal_add_http_header('Status', '503 Service unavailable');
+          drupal_set_title(t('Site under maintenance'));
+          print theme('maintenance_page', array('content' => filter_xss_admin(variable_get('maintenance_mode_message',
+            t('@site is currently under maintenance. We should be back shortly. Thank you for your patience.', array('@site' => variable_get('site_name', 'Drupal')))))));
+          break;
+      }
+    }
+    elseif (!empty($page_callback_result)) {
+      echo trim($page_callback_result);
+    }
+  }

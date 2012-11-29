@@ -1,0 +1,6 @@
+name = Advanced Preview
+description = Provides a mechanism for showing a much better preview
+package = "User Interface"
+core = 7.x
+
+version = "7.x-1.0-alpha1"
